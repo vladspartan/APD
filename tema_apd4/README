@@ -1,0 +1,203 @@
+Tema 4 APD
+
+Student: NICULA Bogdan Daniel
+Grupa:   334CB
+
+
+I. Introducere:
+
+1.)Structura arhivei
+-main.c: fisierul care contine tot codul sursa al temei
+-Makefile, README
+
+-./tests/ director cu teste. Acestea vin in pereche.
+
+2.)Comenzi makefile
+
+build -> genereaza executabilul tema4
+test1 -> face primul test
+test2 -> face al doilea test
+test3 -> face al treilea test
+clean -> elimina fisierul tema4
+
+
+
+II. Implementare
+
+0.) Structuri folosite:
+
+-> candidate:
+
+Reprezinta un candidat la pozitia de leader/adjunct. Are campurile id si num_neighbours deoarece 
+am ales ca procesele sa fie comparate descrescator dupa numar de vecini si crescator dupa id. 
+
+Astfel lider-ul va fi procesul cu cei mai multi vecini si cel mai mic rank. 
+
+
+-> msg:
+
+Toate mesajele transmise intre procese vor fi alcatuite dintr-o structura msg.
+
+Aceasta are umatoarele campuri:
+-type: 					Poate fi: SONDAJ, ECOU, CONV, CONV_END, LEAD_WP, LEAD_ID, LEAD_OK
+-dest_id, source_id :   Reprezinta sursa si destinatia finala a unui mesaj. Folosite doar in etapa 2.
+-payload:				Un buffer in care se pot salva diverse informatii(topologie, candidati leader, etc.)
+
+
+
+1.) Task-ul 1
+
+Tipuri mesaje: SONDAJ, ECOU.
+
+->Pasul 1:
+Procesul 0 transmite cate un mesaj SONDAJ toate nodurilor cu care este conectat direct.
+Procesul i (i>0) va astepta un mesaj SONDAJ de la parintele sau si apoi va trimite mesaje sondaj
+tuturor celorlalte noduri vecine.
+
+->Pasul 2:
+Procesele "frunza"(nu au alti vecini pe langa parinte) transmit un mesaj ECOU nodului parinte.
+Procesele "intermediare"(au un parinte si cel putin un copil) asteapta cate un mesaj ECOU de la fiecare
+copil. Daca primesc un mesaj SONDAJ, vor raspunde acelui proces cu un mesaj ECOU continand 
+topologia nula(fara informatie utila), isi vor decrementa numarul de vecini(num_neighbours) 
+si practic vor ignora legatura directa cu acel proces pe viitor.
+Procesul "radacina"(cel cu rank 0) va astepta cate un mesaj ECOU de la fiecare copil al sau.
+
+La trimiterea unui nod ECOU un proces isi va salva matricea de adiacenta(cat cunoaste el din topologie)
+in campul payload al mesajului transmis.
+De asemenea el isi va trimite si tabela de rutare, salvata pe diagonala matricei de adiacenta.
+(Aceasta deoarece stim ca diagonala matricei de adiacenta e mereu 0 si este oricum spatiu irosit).
+
+ex:
+
+matrice   tabela          informatie salvata in payload
+0 1 1     1 1             1 1 1
+1 0 0     2 1        =>   1 2 0
+1 0 0  	  3 3             1 0 3 
+
+La primirea unui ECOU procesul isi va construi noua matrice de adiacenta facand SAU logic intre 
+matricea sa si cea primita si bordand diagonala principala cu 0.
+
+Construirea tabelei de rutare:
+
+A. Pentru nodul frunza j cu parintele k:
+
+-Nodul i(i != j) are next hop k
+-Nodul j are next hop j
+
+B. Pentru nodul intermediar j cu parintele k;
+
+-Initial construiesc tabela exact ca la A.
+-La fiecare mesaj ecou primit de la copilul l
+		-Pentru toate nodurile din tabela de rutare a lui l care nu au next hop j(inseamna ca se
+		poate ajunge la ele "coborand pe arbore") voi trece next hop l
+
+C. Pentru radacina
+
+-Exact la fel ca la B
+
+La final fiecare nod (A, B, sau C) va obtine tabela sa proprie de rutare, pe care o poate transmite
+mai sus.
+
+Exemplu:
+
+1
+|\
+2 3
+|
+4
+
+tabela lui 4: 2 2 2 4
+tabela lui 2: 1 2 1 4
+tabela lui 3: 1 1 3 1
+tabela lui 1: 1 2 3 2
+
+
+Task-ul se incheie la primirea ultimului mesaj ECOU de catre root.
+Topologia completa nu este trimisa inapoi nodurilor deoarece pentru task-urile urmatoare
+existenta unei tabele de rutare este mai mult decat suficienta.
+
+
+La final acesta va afisa topologia si fiecare proces isi va afisa tabela de rutare.
+NOTA: Tabela de rutare va avea formatul:
+
+"
+nod
+nod_destinatie1 next_hop
+nod_destinatie2 next_hop
+...
+nod_destinatien next_hop
+"
+
+
+
+2.)Task-ul 2
+
+Tipuri mesaje: CONV, CONV_END
+
+A.)Format mesaje:
+
+-mesaj broadcast initial
+{$1}BROADCAST initial! 					// $1=sursa broadcast(nod curent)
+{$1}Primit BROADCAST initial de la $2   // $1=nod curent $2=sursa broadcast
+
+-mesaj broadcast normal
+{$1}[B]: %s 							// $1=sursa broadcast(nod curent)
+{$1}[B](from $2): %s  					// $1=nod curent $2=sursa broadcast
+
+-mesaj sursa->destinatie normal
+{$1}[$2->$3]:  %s 						// $1=nod curent $2=nod sursa $3=nod destinatie
+{$1}[$2->$3](nh $4):  %s  				// $1=nod curent $2=nod sursa $3=nod destinatie $4=next hop
+
+
+B.)Functionare
+
+Pasul1: Fiecare nod face broadcast initial. Cand toate nodurile au primit broadcast de la toate
+se trece mai departe.
+Pasul2: Fiecare nod citeste fisierul cu mesaje si isi trimite toate mesajele. La final trimite
+un mesaj de tip CONV_END.
+Pasul3: Fiecare nod asteapta intr-o bucla infinita pana ce primeste numtask-1 mesaje CONV_END.
+Daca primeste mesaje destinate siesi le afiseaza, daca primeste mesaje destinate altora( sau broadcast)
+le trimite mai departe folosindu-se de tabela de rutare.
+
+
+
+3.)Task-ul 3
+
+A.)Functionare:
+
+Pasul0: (etapa redundanta, dar pastrata pentru a respecta algoritmul)
+Fiecare nod face broadcast cu un mesaj de wake-up(LEAD_WP).
+Se continua cand toate nodurile au primit toate mesajele.
+
+Pasul1:
+->Pentru nod frunza:
+	Trimite 2 structuri candidat, care ambele il "nominalizeaza" pe el intr-un mesaj LEAD_ID
+
+->Pentru nod intermediar
+	Creeaza 2 structuri candidat, care ambele il "nominalizeaza" pe el
+	Pentru fiecare mesaj primit, compara cele 2 structuri candidat interne si cele 2 primite, 
+	salvand intern cele mai bune 2 rezultate(leader si adjunct).
+	Cand a primit cate un mesaj LEAD_ID de la fiecare copil, ii trimite parintelui un mesaj
+	LEAD_ID continand cele 2 structuri candidat interne.
+
+->Nodul sursa
+	Primeste LEAD_ID de la fiecare nod copil. Compara de fiecare data cele 2 structuri interne
+	cu cele 2 primite.
+	Dupa ce s-a analizat ultimul mesaj LEAD_ID radacina are rezultatul in structurile sale
+	interne candidat.
+
+Pasul2:
+Radacina trimite prin broadcast rezultatul tuturor proceselor.
+Fiecare proces afiseaza liderul si adjunctul pe care le recunoaste.
+
+Aici se sfarseste executia programului.
+
+
+III.Observatii
+
+Deoarece am lucrat doar cu stdout, fara a scrie in fisiere temporare este posibil ca la 
+anumite rulari output-ul sa fie putin alterat. In acest caz daca rulati iarasi testul de 2-3 ori
+ar trebui sa obtineti un rezultat mai bun.
+
+NOTA: In fisierul messages este recomandat ca ultima linie continand informatie utila sa fie urmata de 
+un caracter newline!!!

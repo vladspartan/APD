@@ -1,0 +1,260 @@
+---------------------------------------------------------------------------------------------------
+###### Tema 1 APD
+
+## Student: NICULA Bogdan Daniel
+## Grupa:	334CB
+
+---------------------------------------------------------------------------------------------------
+I. Specificatii:
+
+1) Fisiere sursa.
+
+Tema contine 4 surse *.c reprezentand rezolvarea serial neoptimizata, serial optimizata, paralel
+neoptimizata si paralel optimizata a problemei.
+Acestea se numesc:
+
+serial_neoptimizat.c
+serial_optimizat.c
+paralel_neoptimizat.c
+paralel_optimizat.c
+
+Pe langa acestea este inclus si un Makefile avand urmatoarele reguli:
+
+1. sn, so, pn, po 	(compilare individuala)
+2. all 				(compilarea tuturor surselor)
+3. clean 			(stergere executabile)
+
+NOTA: Executabilele vor avea numele sursei fara extensie
+(ex: pt serial_optimizat.c avem serial_optimizat)
+
+
+2)Specificatii mediu testare.
+
+Tema a fost testata pe o masina virtuala de Ubuntu 12.10, versiunea de gcc: 4.7.2.
+
+Specificatii procesor:
+Intel Core i5
+number of cores 2
+numer of threads 4
+frecventa 2.6/3.2 GHz
+dimensiunea cache-ului de 3MB.
+
+NOTA: Testarea pentru scalabilitate s-a realizat si pe o masina cu 4 thread-uri
+cu Ubuntu instalat in paralel cu Windows(nu masina virtuala)(vezi sectiunea III).
+
+---------------------------------------------------------------------------------------------------
+II. Implementare
+
+0)Definitii
+dmax = distanta maxima la care se poate afla cea mai apropiata aparitie a unei culori 
+		de senatorul analizat curent
+loc_max = culoarea aflata la distanta dmax
+N = numar linii matrice patratica(dimensiune N*N)
+
+1)Serial neoptimizat.
+
+->structuri de date
+>matrici alocate dinamic: 
+	matricea saptamanii curente(a) = matricea continand culorile senatorilor in saptamana curenta
+	matricea saptamanii viitoare(b) = matricea continand culorile senatorilor in saptamana viitoare
+
+>vectori alocati static:
+vectorul de contorizare a aparitilor culorilor(configuration) = Vector in care la sfarsitul unei 
+					saptamani vom avea numarul de senatori pentru fiecare culoare
+					(configuration[i] = numar senatori de culoare Ci)
+vectorul de distante(c) = vectorul in care pentru senatorul analizat curent se retin distantele 
+			la care se afla cea mai apropiata aparitie a fiecarei culori.
+
+NOTA: In c toate elementele sunt initializate cu N + 1 (distanta imposibila pentru o culoare existenta).
+	De aceea daca o culoare ramane la sfarsit cu distanta N+1 pe pozitia aferenta ei din vectorul c
+	inseamna ca acea culoare a fost eliminata.
+
+->concept de baza
+-In cadrul unei saptamani, pentru fiecare senator in parte parcurgem intreaga matrice determinand
+distanta minima la care se afla fiecare culoare existenta pe matrice fata de el si stocand aceasta 
+valoare intr-un vector(notat c).
+-La final se parcurge acest vector(c) determinandu-se dmax, respectiv loc_max.
+-Odata determinate cele doua se actualizeaza matricea saptamanii viitoare, vectorul de contorizare a
+aparitiilor culorilor si se trece la urmatorul senator.
+-Cand toti senatorii au fost parcursi matricea saptamanii viitoare devine(o suprascrie pe) matricea
+saptamanii curente si procesul se reia.
+
+
+2)Paralel neoptimizat.
+
+In mare parte aceata rezolvare se bazeaza pe versiunea serial neoptimizat.
+
+Structurile de date folosite sunt aceleasi.
+Mentionam ca pentru portiunea executata paralel matricile a si b vor fi shared, la fel si vectorul 
+configuration; vectorul c va constitui o variabila shared.
+
+->concept de baza
+Deoarece transformarile care se efectueaza asupra unui senator x nu influenteaza transformarile
+efectuate asupra unui alt senator y paralelizarea va fi facuta la nivelul senatorilor.
+Singura 'problema' a fost accesarea vectorului configuration. Pentru a impiedica scrierea
+simultana in acesta a 2 sau mai multe thread-uri l-am introdus intr-o sectiune critica.
+
+3)Serial optimizat.
+
+->stucturi de date:
+>matrici alocate dinamic: aceleasi ca la (1)
+>vectori alocati static:
+vectorul de contorizare a aparitilor culorilor(configuration) - acelasi ca la (1)
+vector flag-uri culori = vector in care retinem daca am intalnit o anumita culoare pana in 
+			momentul de fata; pentru fiecare senator analizat el este reinitializat cu 0.
+			codificare: 0 = culoare nedescoperita, 1 = culoare descoperita.
+
+>variabile indicatori:
+available_col 	= numar culori existente in matrice in momentul de fata
+found_col	= numar de culori descoperite pentru senatorul analizat curent
+
+
+->concept de baza
+Urmatorul proces se executa pentru fiecare saptamana
+	Urmatorul proces se executa pentru fiecare senator:
+		-Initializam vector flag-uri de control
+		-Pornim de la un patrat centrat in senator, avand raza 1.
+		-Analizam toti senatorii de pe laturile acelui patrat si actualizam vectorul cu flag-uri de control,
+		precum si variabila found_col, la fiecare culoare gasita.
+		-In acelasi timp sunt actualizate si dmax si local_max
+		-Dupa ce am parcurs toate laturile patratului incrementam cu 1 raza si reluam procesul.
+		-Procesul se va opri cand found_col == available_col(toate culorile au fost descoperite)
+		sau cand raza va depasi N
+		-Se actualizeaza matricea saptamanii viitoare si vectorul de contorizare a culorilor
+	Dupa ce au fost analizati toti senatorii matricea saptamanii curente va fi suprascrisa de matricea 
+	saptamanii viitoare, vectorul de contorizare a culorilor va fi salvat in fisier.
+Se salveaza in fisier si matricea finala.
+
+
+4)Paralel optimizat
+
+->Structuri de date: Aceleasi ca la serial neoptimizat.
+
+->Concept de baza
+Avand in vedere ca transformarile(schimbarea culorilor) senatorilor sunt independente una de alta,
+la nivelul unei saptamani, vom paraleliza la nivelul analizei senatorilor.
+(Mai exact fiecare thread isi poate alege o linie din matricea de sentori si poate aplica, rand
+pe rand, transformarile pentru fiecare senator).
+Matricile a si b, dimensiunea N si vectorul configuration au fost considerate ca fiind variabile
+shared. Restul variabilelor folosite sunt private.
+Pentru a efectua numararea senatorilor tot in zona paralela am considerat sectiunea in care se realiza
+actualizarea vectorului configuration ca fiind o sectiune critica. Astfel nu riscam ca acea zona 
+de memorie sa fie scrisa simultan de mai multe thread-uri.
+
+
+III) Analiza performantei
+
+Am avut 2 scenarii de testare:
+-matrice 50*50 7 culori 60 saptamani
+-matrice 100*100 20 culori 100 saptamani
+
+
+1.) Timp programe seriale:
+
+a) Serial neoptimizat
+
+->test in50_7 60 saptamani 		2.36 sec
+->test in100_20 100 saptamani 		1min 2sec
+
+b) Serial optimizat
+
+->test in50_7 60 saptamani 		0.61 sec
+->test in100_20 100 saptamani 		12.53 sec
+
+
+2.) Timp programe paralelizate:
+
+a)Paralel neoptimizat
+
+	i) Scheduling static, chunksize 1
+		-1 Thread
+		->test in50_7 60 saptamani		2.57 sec
+		->test in100_20 100 saptamani 		1min 4sec
+
+		-2 Threads
+		->test in50_7 60 saptamani 		1.62 sec
+		->test in100_20 100 saptamani 		40.51 sec
+
+		-4 Threads
+		->test in50_7 60 saptamani 		1.40 sec
+		->test in100_20 100 saptamani 		33.47 sec
+	ii)Scheduling dinamic, chunksize 1
+		-1 Thread
+		->test in50_7 60 saptamani 		2.61 sec
+		->test in100_20 100 saptamani 		1min 5sec
+
+		-2 Threads
+		->test in50_7 60 saptamani 		1.58 sec
+		->test in100_20 100 saptamani 		40.01 sec
+
+		-4 Threads
+		->test in50_7 60 saptamani 		1.35 sec
+		->test in100_20 100 saptamani 		33.69 sec	
+
+b)Paralel optimizat
+
+	i) Scheduling static, chunksize 1
+		-1 Thread
+		->test in50_7 60 saptamani 		0.60 sec
+		->test in100_20 100 saptamani 		11.84 sec
+
+		-2 Threads
+		->test in50_7 60 saptamani 		0.43 sec
+		->test in100_20 100 saptamani 		7.79 sec
+
+		-4 Threads
+		->test in50_7 60 saptamani 		0.37 sec
+		->test in100_20 100 saptamani 		6.21 sec
+	ii)Scheduling dinamic, chunksize 1
+		-1 Thread
+		->test in50_7 60 saptamani 		0.61 sec
+		->test in100_20 100 saptamani 		11.96 sec
+
+		-2 Threads
+		->test in50_7 60 saptamani 		0.43 sec
+		->test in100_20 100 saptamani 		7.89 sec
+
+		-4 Threads
+		->test in50_7 60 saptamani 		0.39 sec
+		->test in100_20 100 saptamani 		6.23 sec		
+
+NOTA: Testele au fost efectuate de 3 ori, alegandu-se cel mai rapid rezultat.
+
+SPEEDUP:
+	Intre versiunea pe un thread si cea pe 2 se observa un speedup de 1.6(pentru neoptimizat),
+respectiv 1.5(pentru optimizat).
+	De asemenea se observa ca algoritmul scaleaza(exista diferente considerabile intre rularea
+	pe 2 thread-uri si cea pe 4). Totusi datorita limitarilor fizice ale masinii folosite
+	(i5 cu 2 core-uri, ruland pe o masina virtuala cu 1 procesor)nu am putut
+	obtine rezultatele dorite petru trecerea de la 2 la 4 thread-uri.
+	Pentru a testa scalabilitatea de la 2 la 4 thread-uri am testat versiunea paralel optimizata
+	pe un alt laptop(procesor i7) obtinand rezultatele(static, chunksize 1):
+
+	1 thread: 11.54s
+	2 thread: 7.12s 
+	4 thread: 4.70s
+
+	S-au executat cate 2 teste, trecandu-se media celor 2.
+	Din aceste rezultate se observa clar un speedup de aproximativ 1.5.
+
+
+
+In continuare vom prezenta si alte rezultate observate pentru versiunea paralel optimizata(pe 2 thread-uri):
+
+>static			
+	chunksize = 2 		7.79 sec
+	chunksize = 4 		7.87 sec
+	chunksize = 8 		7.89 sec
+
+>dinamic
+	chunksize = 2 		7.73 sec
+	chunksize = 4 		7.74 sec
+	chunksize = 8 		7.85 sec
+
+Din testele realizate nu se pot observa diferente concludente intre static si dinamic.
+Aceasta se datoreaza faptului ca paralelizarea realizata a fost destul de simpla ca implementare.
+
+In schimb s-a observat un "trend" in cazul chunksize-ului. Pentru valori intre 1 si 4 se mentine relativ 
+constant, dar pentru valori mai mari, programul pare sa incetineasca(putin).
+
+
